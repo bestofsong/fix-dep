@@ -5,7 +5,11 @@
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "preinstall": "npm run build",
     "build": "[ -d dist ] && rm -rf dist ; mkdir dist ;  node_modules/.bin/babel src --out-dir dist"
+  },
+  "bin": {
+    "js-refactor": "node dist/index.js \"$*\""
   },
   "repository": {
     "type": "git",
