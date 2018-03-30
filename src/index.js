@@ -61,11 +61,12 @@ function iterateSourceFiles(dir, options = {}, callback) {
 }
 
 // fix files within subdir
+console.log('processing internal files\n\n');
 iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
   const dir = path.dirname(file);
   const wouldBePath = path.join(subdirOld, path.relative(subdirNew, file));
   const wouldBeDir = path.dirname(wouldBePath);
-  const fileContent = fs.readFileSync(file);
+  const fileContent = fs.readFileSync(file, { encoding: 'utf8' });
   const lines = fileContent.split('\n');
 
   lines.forEach((line, ii) => {
@@ -73,7 +74,7 @@ iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
       re.lastIndex = 0;
       let m;
       while ((m = re.exec(line)) !== null) {
-        const dep = m[0];
+        const dep = m[1];
         // 其他模块/文件/包，忽略
         if (!shouldFix(dep)) {
           continue;
@@ -94,7 +95,9 @@ iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
             path.join(subdirNew, path.relative(subdirOld, wouldBeDep)));
         }
 
-        lines[ii] = line.substr(0, m.index) + line.substr(m.index).replace(dep, newDep);
+        const newline = line.substr(0, m.index) + line.substr(m.index).replace(dep, newDep);
+        console.log('update file: %s\n  %s\n->%s\n\n', file, line, newline);
+        lines[ii] = newline;
       }
     });
   });
@@ -103,12 +106,13 @@ iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
 
 
 // fix files outside subdir
+console.log('processing external files\n\n');
 iterateSourceFiles(srcRoot,
   { excludes: [d => isSuperDir(subdirNew, d), IGNORE_DIR] },
   ({ file }) => {
 
   const dir = path.dirname(file);
-  const fileContent = fs.readFileSync(file);
+  const fileContent = fs.readFileSync(file, { encoding: 'utf8' });
   const lines = fileContent.split('\n');
 
   lines.forEach((line, ii) => {
@@ -116,7 +120,7 @@ iterateSourceFiles(srcRoot,
       re.lastIndex = 0;
       let m;
       while ((m = re.exec(line)) !== null) {
-        const dep = m[0];
+        const dep = m[1];
         // 其他模块/文件/包，忽略
         if (!shouldFix(dep)) {
           continue;
@@ -124,14 +128,20 @@ iterateSourceFiles(srcRoot,
         const isRela = isRelative(dep);
         const oldDepPath = isRelativeToSrcRoot(dep) ?
           path.join(srcRoot, dep) : path.join(dir, dep);
-        const isAffected = isSuperDir(subdirOld, oldDepPath);
+        const isAffected = isSuperDir(path.join(srcRoot, subdirOld), oldDepPath);
         if (!isAffected) {
           continue;
         }
         const newDepPath = path.join(subdirNew, path.relative(subdirOld, oldDepPath));
-        const newDep = isRela ? path.relative(dir, newDepPath) : path.relative(srcRoot, newDepPath);
-        lines[ii] = line.substr(0, m.index) +
-          line.substr(m.index).replace(dep, path.normalize(newDep));
+        let newDep = isRela ? path.normalize(path.relative(dir, newDepPath))
+          : path.normalize(path.relative(srcRoot, newDepPath));
+        if (isRela && !isRelative(newDep)) {
+          newDep = './' + newDep;
+        }
+        const newline = line.substr(0, m.index) +
+          line.substr(m.index).replace(dep, newDep);
+        console.log('update file: %s\n  %s\n->%s\n\n', file, line, newline);
+        lines[ii] = newline;
       }
     });
   });
