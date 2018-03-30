@@ -101,7 +101,7 @@ iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
         }
 
         const newline = line.substr(0, m.index) + line.substr(m.index).replace(dep, newDep);
-        console.log('update file: %s\n  %s\n->%s\n\n', file, line, newline);
+        console.log('update file: %s\n  %s\n->%s\n', file, line, newline);
         lines[ii] = newline;
       }
     });
@@ -145,7 +145,7 @@ iterateSourceFiles(srcRoot,
         }
         const newline = line.substr(0, m.index) +
           line.substr(m.index).replace(dep, newDep);
-        console.log('update file: %s\n  %s\n->%s\n\n', file, line, newline);
+        console.log('update file: %s\n  %s\n->%s\n', file, line, newline);
         lines[ii] = newline;
       }
     });

@@ -6,11 +6,14 @@ export function isRelative(file) {
   return /^\.\/|\.\.\//.test(file);
 }
 
-export function isSuperDir(superDir, childDir) {
-  let norm1 = path.normalize(superDir);
-  const norm2 = path.normalize(childDir);
-  if (!/\/$/.test(norm1)) {
-    norm1 = `${norm1}/`;
+function addTrailingSlash(dir) {
+  if (/\/$/.test(dir)) {
+    return dir;
   }
-  return norm2.startsWith(norm1);
+  return `${dir}/`;
+}
+
+export function isSuperDir(superDir, childDir) {
+  return addTrailingSlash(childDir)
+    .startsWith(addTrailingSlash(superDir));
 }
