@@ -7,8 +7,16 @@ import { isRelative, isSuperDir } from './utils';
 const args = process.argv;
 const subdirOld = args[2];
 const subdirNew = args[3];
-
 const srcRoot = process.cwd();
+
+
+if (fs.existsSync(subdirNew)) {
+  throw new Error(`subdirNew exists: ${subdirNew}`);
+}
+if (!fs.existsSync(subdirOld)) {
+  throw new Error(`subdirOld does not exists: ${subdirOld}`);
+}
+fs.renameSync(subdirOld, subdirNew);
 
 
 const MATCH_REQUIRE = /require\(['"](.+?)['"]\)/g;
@@ -37,6 +45,7 @@ function iterateSourceFiles(dir, options = {}, callback) {
       } else if (re instanceof Regex) {
         return re.test(d);
       }
+      // 断言
       throw new Error('not a valid matcher');
     });
   };
@@ -78,9 +87,11 @@ iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
         }
         let newDep = '';
         if (isRela) {
-          newDep = path.relative(dir, wouldBeDep);
+          newDep = path.normalize(path.relative(dir, wouldBeDep));
         } else {
-          newDep = path.join(subdirNew, path.relative(subdirOld, wouldBeDep));
+          newDep = path.relative(
+            srcRoot,
+            path.join(subdirNew, path.relative(subdirOld, wouldBeDep)));
         }
 
         lines[ii] = line.substr(0, m.index) + line.substr(m.index).replace(dep, newDep);
@@ -89,6 +100,7 @@ iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
   });
   fs.writeFileSync(file, lines.join('\n'));
 });
+
 
 // fix files outside subdir
 iterateSourceFiles(srcRoot,
@@ -117,8 +129,9 @@ iterateSourceFiles(srcRoot,
           continue;
         }
         const newDepPath = path.join(subdirNew, path.relative(subdirOld, oldDepPath));
-        const newDep = path.relative(dir, newDepPath);
-        lines[ii] = line.substr(0, m.index) + line.substr(m.index).replace(dep, newDep);
+        const newDep = isRela ? path.relative(dir, newDepPath) : path.relative(srcRoot, newDepPath);
+        lines[ii] = line.substr(0, m.index) +
+          line.substr(m.index).replace(dep, path.normalize(newDep));
       }
     });
   });
