@@ -5,8 +5,8 @@ import traverser from 'directory-traverser';
 import { isRelative, isSuperDir } from './utils';
 
 const args = process.argv;
-const subdirOld = args[1];
-const subdirNew = args[2];
+const subdirOld = args[2];
+const subdirNew = args[3];
 const srcRoot = process.cwd();
 
 
@@ -42,8 +42,8 @@ function iterateSourceFiles(dir, options = {}, callback) {
     return !excludes.some((matcher) => {
       if (typeof matcher === 'function') {
         return matcher(d);
-      } else if (re instanceof Regex) {
-        return re.test(d);
+      } else if (matcher instanceof RegExp) {
+        return matcher.test(d);
       }
       // 断言
       throw new Error('not a valid matcher');
