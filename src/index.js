@@ -5,8 +5,8 @@ import traverser from 'directory-traverser';
 import { isRelative, isSuperDir } from './utils';
 
 const args = process.argv;
-const subdirOld = args[2];
-const subdirNew = args[3];
+const subdirOld = args[1];
+const subdirNew = args[2];
 const srcRoot = process.cwd();
 
 

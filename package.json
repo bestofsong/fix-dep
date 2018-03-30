@@ -9,7 +9,7 @@
     "build": "[ -d dist ] && rm -rf dist ; mkdir dist ;  node_modules/.bin/babel src --out-dir dist"
   },
   "bin": {
-    "js-refactor": "node dist/index.js \"$*\""
+    "js-refactor": "dist/index.js"
   },
   "repository": {
     "type": "git",
