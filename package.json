@@ -1,7 +1,7 @@
 {
   "name": "js-refactor",
   "version": "1.0.0",
-  "description": "mv file around keeping dependencies in sync",
+  "description": "mv file/directory around keeping require and import statements in sync",
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

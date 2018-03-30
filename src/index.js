@@ -9,11 +9,16 @@ const subdirOld = args[2];
 const subdirNew = args[3];
 const srcRoot = process.cwd();
 
+function help() {
+  console.error('Usage: js-refactor <from-directory> <to-directory>');
+}
 
 if (fs.existsSync(subdirNew)) {
+  help();
   throw new Error(`subdirNew exists: ${subdirNew}`);
 }
 if (!fs.existsSync(subdirOld)) {
+  help();
   throw new Error(`subdirOld does not exists: ${subdirOld}`);
 }
 fs.renameSync(subdirOld, subdirNew);
