@@ -1,6 +1,6 @@
 {
   "name": "js-refactor",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "mv file/directory around keeping require and import statements in sync",
   "main": "src/index.js",
   "scripts": {

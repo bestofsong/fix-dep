@@ -2,30 +2,53 @@
 import path from 'path';
 import fs from 'fs';
 import traverser from 'directory-traverser';
-import { isRelative, isSuperDir, toAbsolute, isSameFile } from './utils';
+import {
+  isRelative,
+  isSuperDir,
+  toAbsolute,
+  isSameFile,
+  depMatchFs,
+  addSuffix,
+  trimSuffix,
+  fsToDep,
+  getSuffix,
+} from './utils';
 
 
 const srcRoot = process.cwd();
 const args = process.argv;
 const fromFile = toAbsolute(args[2], srcRoot);
-const toFile = toAbsolute(args[3], srcRoot);
+let toFile = toAbsolute(args[3], srcRoot);
 
+(function checkFromFile() {
+  fs.statSync(fromFile);
+})();
 
-const stat = fs.statSync(fromFile);
-if (!stat) {
-  help();
-  throw new Error(`fromFile does not exists: ${fromFile}`);
-}
-if (fs.existsSync(toFile)) {
-  help();
-  throw new Error(`toFile already exists: ${toFile}`);
-}
-fs.renameSync(fromFile, toFile);
+(function checkAndFixToFile() {
+  try {
+    const stat2 = fs.statSync(toFile);
+    if (stat2.isDirectory()) {
+      toFile = path.join(toFile, path.basename(fromFile));
+      if (fs.existsSync(toFile)) {
+        throw new Error('目标文件已存在，不允许覆盖');
+      }
+    } else {
+      help();
+      throw new Error(`toFile already exists and is a plain file: ${toFile}`);
+    }
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      return;
+    }
+    throw e;
+  }
+})();
 
-const isDirectory = stat.isDirectory(fromFile);
+const isDirectory = fs.statSync(fromFile).isDirectory();
 const subdirOld = isDirectory && fromFile;
 const subdirNew = isDirectory && toFile;
 
+fs.renameSync(fromFile, toFile);
 
 function help() {
   console.error('Usage: js-refactor <from-file> <to-file>');
@@ -37,14 +60,6 @@ const MATCH_IMPORT = /import[\s\S]+?from\s*['"](.+?)['"]/g;
 const MATCH_EXPORT = /export[\s\S]+?from\s*['"](.+?)['"]/g;
 const IGNORE_DIR = /\/node_modules\/?$/;
 const SELECT_SOURCE_FILE = /\.js$/;
-
-function addSuffix(dep) {
-  return dep + '.js';
-}
-
-function trimSuffix(dep) {
-  return dep.replace(/\.js$/, '');
-}
 
 function shouldFix(file) {
   return /^src\/|^\.\/|^\.\.\//.test(file);
@@ -84,7 +99,10 @@ function iterateSourceFiles(dir, options = {}, callback) {
 
 
 function fixOnlyFile() {
-  console.log('fix only file\n\n');
+  if ((getSuffix(toFile) || '').toLowerCase() !== 'js') {
+    return;
+  }
+  console.log('fix only file...\n\n');
   let fileContent = fs.readFileSync(toFile, { encoding: 'utf8' });
   [MATCH_IMPORT, MATCH_REQUIRE, MATCH_EXPORT].forEach((re) => {
     re.lastIndex = 0;
@@ -105,7 +123,7 @@ function fixOnlyFile() {
         return;
       }
       const realDep = path.join(dirOld, dep);
-      const newDep = path.relative(dirNew, realDep);
+      let newDep = path.relative(dirNew, realDep);
       if (isRela && !isRelative(newDep)) {
         newDep = './' + newDep;
       }
@@ -120,7 +138,7 @@ function fixOnlyFile() {
 
 
 function fixFilesDependingOnOnlyFile() {
-  console.log('fix files depending on only file\n\n');
+  console.log('fix files depending on only file...\n\n');
   iterateSourceFiles(srcRoot,
     { excludes: [IGNORE_DIR] },
     ({ file }) => {
@@ -139,11 +157,14 @@ function fixFilesDependingOnOnlyFile() {
           continue;
         }
         const isRela = isRelative(dep);
-        const realDep = path.join(dir, dep);
-        if (!isSameFile(addSuffix(realDep), fromFile)) {
+        const isRelaSrcRoot = isRelativeToSrcRoot(dep);
+        const realDep = path.join(isRelaSrcRoot ? srcRoot : dir, dep);
+
+        if (!depMatchFs(addSuffix(realDep, getSuffix(fromFile)), fromFile)) {
           continue;
         }
-        const newDep = path.relative(dir, trimSuffix(toFile));
+        const fixDep = fsToDep(toFile);
+        let newDep = path.relative(isRelaSrcRoot ? srcRoot : dir, fixDep);
         if (isRela && !isRelative(newDep)) {
           newDep = './' + newDep;
         }
@@ -159,7 +180,7 @@ function fixFilesDependingOnOnlyFile() {
 
 // fix files within subdir
 function fixFilesInSubdir() {
-  console.log('processing internal files\n\n');
+  console.log('processing internal files...\n\n');
   iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
     const dir = path.dirname(file);
     const wouldBePath = path.join(subdirOld, path.relative(subdirNew, file));
@@ -202,7 +223,7 @@ function fixFilesInSubdir() {
 
 // fix files outside subdir
 function fixFilesOutsideSubdir() {
-  console.log('processing external files\n\n');
+  console.log('processing external files...\n\n');
   iterateSourceFiles(srcRoot,
     { excludes: [d => isSuperDir(subdirNew, d), IGNORE_DIR] },
     ({ file }) => {
