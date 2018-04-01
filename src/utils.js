@@ -9,7 +9,7 @@ export function addSuffix(dep, suf = 'js') {
 }
 
 export function getSuffix(f = '') {
-  const match = f.match(/\.([^.]+)$/);
+  const match = f.match(/\.([^/.]+)$/);
   return match && match[1] || '';
 }
 
@@ -22,7 +22,7 @@ export function isRelative(file) {
   return /^\.\/|\.\.\//.test(file);
 }
 
-function addTrailingSlash(dir) {
+export function addTrailingSlash(dir) {
   if (/\/$/.test(dir)) {
     return dir;
   }
@@ -61,6 +61,9 @@ function isPicture(type) {
 }
 
 export function depMatchFs(depPath, fsPath) {
+  if (isSameFile(addSuffix(depPath, 'js'), fsPath)) {
+    return true;
+  }
   const filenameFs = path.basename(fsPath);
   const filenameDep = path.basename(depPath);
   const dirnameFs = path.dirname(fsPath);

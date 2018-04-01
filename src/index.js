@@ -2,6 +2,7 @@
 import path from 'path';
 import fs from 'fs';
 import traverser from 'directory-traverser';
+import { resolveDep, useImplicitPrefix } from './module_resolver';
 import {
   isRelative,
   isSuperDir,
@@ -48,10 +49,8 @@ const isDirectory = fs.statSync(fromFile).isDirectory();
 const subdirOld = isDirectory && fromFile;
 const subdirNew = isDirectory && toFile;
 
-fs.renameSync(fromFile, toFile);
-
 function help() {
-  console.error('Usage: js-refactor <from-file> <to-file>');
+  console.error('Usage: js-refactor <from-file-or-directory> <to-file-or-directory>');
 }
 
 
@@ -61,13 +60,6 @@ const MATCH_EXPORT = /export[\s\S]+?from\s*['"](.+?)['"]/g;
 const IGNORE_DIR = /\/node_modules\/?$/;
 const SELECT_SOURCE_FILE = /\.js$/;
 
-function shouldFix(file) {
-  return /^src\/|^\.\/|^\.\.\//.test(file);
-}
-
-function isRelativeToSrcRoot(file) {
-  return /^src\//.test(file);
-}
 
 // traverse source file
 function iterateSourceFiles(dir, options = {}, callback) {
@@ -103,17 +95,14 @@ function fixOnlyFile() {
     return;
   }
   console.log('fix only file...\n\n');
-  let fileContent = fs.readFileSync(toFile, { encoding: 'utf8' });
+  let fileContent = fs.readFileSync(fromFile, { encoding: 'utf8' });
   [MATCH_IMPORT, MATCH_REQUIRE, MATCH_EXPORT].forEach((re) => {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(fileContent)) !== null) {
       const dep = m[1];
-      // 其他模块/文件/包，忽略
-      if (!shouldFix(dep)) {
-        continue;
-      }
       const isRela = isRelative(dep);
+      // 移动单个文件不影响该文件对其他module的绝对路径导入
       if (!isRela) {
         continue;
       }
@@ -133,7 +122,7 @@ function fixOnlyFile() {
       re.lastIndex += newDep.length - dep.length;
     }
   });
-  fs.writeFileSync(toFile, fileContent);
+  fs.writeFileSync(fromFile, fileContent);
 }
 
 
@@ -142,7 +131,7 @@ function fixFilesDependingOnOnlyFile() {
   iterateSourceFiles(srcRoot,
     { excludes: [IGNORE_DIR] },
     ({ file }) => {
-    if (isSameFile(file, toFile)) {
+    if (isSameFile(file, fromFile)) {
       return;
     }
     const dir = path.dirname(file);
@@ -153,18 +142,17 @@ function fixFilesDependingOnOnlyFile() {
       while ((m = re.exec(fileContent)) !== null) {
         const dep = m[1];
         // 其他模块/文件/包，忽略
-        if (!shouldFix(dep)) {
+        const isRela = isRelative(dep);
+        const resolvePath = resolveDep(dir, dep);
+        if (!resolvePath) {
           continue;
         }
-        const isRela = isRelative(dep);
-        const isRelaSrcRoot = isRelativeToSrcRoot(dep);
-        const realDep = path.join(isRelaSrcRoot ? srcRoot : dir, dep);
 
-        if (!depMatchFs(addSuffix(realDep, getSuffix(fromFile)), fromFile)) {
+        if (!depMatchFs(resolvePath, fromFile)) {
           continue;
         }
         const fixDep = fsToDep(toFile);
-        let newDep = path.relative(isRelaSrcRoot ? srcRoot : dir, fixDep);
+        let newDep = isRela ? path.relative(dir, fixDep) : useImplicitPrefix(fixDep);
         if (isRela && !isRelative(newDep)) {
           newDep = './' + newDep;
         }
@@ -181,9 +169,9 @@ function fixFilesDependingOnOnlyFile() {
 // fix files within subdir
 function fixFilesInSubdir() {
   console.log('processing internal files...\n\n');
-  iterateSourceFiles(subdirNew, { excludes: [IGNORE_DIR] }, ({ file }) => {
+  iterateSourceFiles(subdirOld, { excludes: [IGNORE_DIR] }, ({ file }) => {
     const dir = path.dirname(file);
-    const wouldBePath = path.join(subdirOld, path.relative(subdirNew, file));
+    const wouldBePath = path.join(subdirNew, path.relative(subdirOld, file));
     const wouldBeDir = path.dirname(wouldBePath);
     let fileContent = fs.readFileSync(file, { encoding: 'utf8' });
     [MATCH_IMPORT, MATCH_REQUIRE, MATCH_EXPORT].forEach((re) => {
@@ -192,23 +180,24 @@ function fixFilesInSubdir() {
       while ((m = re.exec(fileContent)) !== null) {
         const dep = m[1];
         // 其他模块/文件/包，忽略
-        if (!shouldFix(dep)) {
+        const resolvePath = resolveDep(dir, dep);
+        if (!resolvePath) {
           continue;
         }
         const isRela = isRelative(dep);
-        const wouldBeDep = isRelativeToSrcRoot(dep) ?
-          path.join(srcRoot, dep) : path.join(wouldBeDir, dep);
-        const isInnerFile = isSuperDir(subdirOld, wouldBeDep);
+        const isInnerFile = isSuperDir(subdirOld, resolvePath);
         if ((isRela && isInnerFile) || (!isRela && !isInnerFile)) {
           continue;
         }
         let newDep = '';
         if (isRela) {
-          newDep = path.normalize(path.relative(dir, wouldBeDep));
+          newDep = path.normalize(
+            path.relative(wouldBeDir, path.join(dir, dep))
+          );
         } else {
-          newDep = path.relative(
-            srcRoot,
-            path.join(subdirNew, path.relative(subdirOld, wouldBeDep)));
+          newDep = useImplicitPrefix(fsToDep(
+            path.join(subdirNew, path.relative(subdirOld, resolvePath))
+          ));
         }
 
         console.log('update file: %s\n  %s\n->%s\n', file, dep, newDep);
@@ -225,7 +214,7 @@ function fixFilesInSubdir() {
 function fixFilesOutsideSubdir() {
   console.log('processing external files...\n\n');
   iterateSourceFiles(srcRoot,
-    { excludes: [d => isSuperDir(subdirNew, d), IGNORE_DIR] },
+    { excludes: [d => isSuperDir(subdirOld, d), IGNORE_DIR] },
     ({ file }) => {
 
     const dir = path.dirname(file);
@@ -237,21 +226,22 @@ function fixFilesOutsideSubdir() {
       while ((m = re.exec(fileContent)) !== null) {
         const dep = m[1];
         // 其他模块/文件/包，忽略
-        if (!shouldFix(dep)) {
+        const resolvePath = resolveDep(dir, dep);
+        if (!resolvePath) {
           continue;
         }
         const isRela = isRelative(dep);
-        const oldDepPath = isRelativeToSrcRoot(dep) ?
-          path.join(srcRoot, dep) : path.join(dir, dep);
-        const isAffected = isSuperDir(subdirOld, oldDepPath);
-        if (!isAffected) {
+        const isInnerFile = isSuperDir(subdirOld, resolvePath);
+        if (!isInnerFile) {
           continue;
         }
-        const newDepPath = path.join(subdirNew, path.relative(subdirOld, oldDepPath));
-        let newDep = isRela ? path.normalize(path.relative(dir, newDepPath))
-          : path.normalize(path.relative(srcRoot, newDepPath));
+
+        const newPath = path.join(subdirNew, path.relative(subdirOld, resolvePath));
+        let newDep = isRela ? path.normalize(
+          path.relative(dir, fsToDep(newPath))
+        ) : useImplicitPrefix(fsToDep(newPath));
         if (isRela && !isRelative(newDep)) {
-          newDep = './' + newDep;
+          newDep = `./${newDep}`;
         }
         console.log('update file: %s\n  %s\n->%s\n', file, dep, newDep);
         fileContent = fileContent.substr(0, m.index) + fileContent.substr(m.index).replace(dep, newDep);
@@ -269,3 +259,4 @@ if (isDirectory) {
   fixOnlyFile();
   fixFilesDependingOnOnlyFile();
 }
+fs.renameSync(fromFile, toFile);
